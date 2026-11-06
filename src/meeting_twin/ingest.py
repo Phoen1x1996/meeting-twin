@@ -69,11 +69,20 @@ def import_clip(
     recording_paths = _recording_paths(recordings_dir, clip_id, ranges)
 
     if stored is not None and stored.get("ranges") == range_payload:
+        voice_clone_id = str(stored.get("voice_clone_id", ""))
+        if all(path.is_file() for path in recording_paths):
+            return ImportResult(
+                clip_id=clip_id,
+                recordings=recording_paths,
+                voice_clone_id=voice_clone_id,
+                skipped=True,
+            )
+        _write_bytes(recording_paths, slices)
         return ImportResult(
             clip_id=clip_id,
             recordings=recording_paths,
-            voice_clone_id=str(stored.get("voice_clone_id", "")),
-            skipped=True,
+            voice_clone_id=voice_clone_id,
+            skipped=False,
         )
 
     utterances = []
@@ -144,9 +153,10 @@ def _load_ranges(timing_path: Path | None) -> list[SpeechRange]:
 def _owner_id(ranges: list[SpeechRange], slices: list[bytes]) -> str:
     digest = hashlib.sha256()
     for speech_range, segment in zip(ranges, slices, strict=True):
-        digest.update(speech_range.start.encode())
+        payload = speech_range.as_dict()
+        digest.update(payload["start"].encode())
         digest.update(b"\0")
-        digest.update(speech_range.end.encode())
+        digest.update(payload["end"].encode())
         digest.update(b"\0")
         digest.update(segment)
     return digest.hexdigest()

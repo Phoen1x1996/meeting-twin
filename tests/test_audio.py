@@ -16,6 +16,13 @@ def test_parse_timing_ignores_comments_and_duplicate_ranges():
     assert [(item.start, item.end) for item in ranges] == [("0.0", "1.0"), ("2.0", "3.0")]
 
 
+def test_equivalent_range_spellings_collapse():
+    ranges = parse_timing("0.0 1.0\n0.00 1.00\n")
+    assert len(ranges) == 1
+    assert (ranges[0].start_seconds, ranges[0].end_seconds) == (0.0, 1.0)
+    assert ranges[0].as_dict() == {"start": "0", "end": "1"}
+
+
 def test_parse_timing_rejects_bad_lines():
     with pytest.raises(TimingError):
         parse_timing("0.0\n")

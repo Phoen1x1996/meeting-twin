@@ -222,6 +222,80 @@ def test_rerun_does_not_duplicate_ranges_or_turns(tmp_path):
     assert len(voice.segments) == 1
 
 
+def test_reimport_matches_equivalent_range_spellings(tmp_path):
+    asr = FakeAsr(["owner-line-1", "owner-line-2"])
+    llm = FakeLlm()
+    voice = FakeVoice()
+    clip, timing, owner_a, _other, owner_b = _mixed_clip(tmp_path)
+    recordings = tmp_path / "recordings"
+    data = tmp_path / "data"
+    kwargs = {
+        "recordings_dir": recordings,
+        "data_dir": data,
+        "asr": asr,
+        "llm": llm,
+        "voice": voice,
+    }
+    import_clip(clip, timing, **kwargs)
+    alt = tmp_path / "alt.timing"
+    alt.write_text("0.00 1.00\n2.00 3.00\n", encoding="utf-8")
+    second = import_clip(clip, alt, **kwargs)
+    assert second.skipped is True
+    wavs = sorted(path for path in recordings.rglob("*.wav") if path.is_file())
+    assert [pcm_of(path.read_bytes()) for path in wavs] == [owner_a, owner_b]
+    profile = json.loads((data / "style_profile.json").read_text(encoding="utf-8"))
+    assert len(profile["few_shot_turns"]) == 2
+    assert len(voice.segments) == 1
+    assert len(asr.seen) == 2
+    assert len(llm.prompts) == 1
+
+
+def test_reimport_rewrites_missing_wavs(tmp_path):
+    voice = FakeVoice()
+    clip, timing, owner_a, _other, owner_b = _mixed_clip(tmp_path)
+    recordings = tmp_path / "recordings"
+    data = tmp_path / "data"
+    kwargs = {
+        "recordings_dir": recordings,
+        "data_dir": data,
+        "asr": FakeAsr(["owner-line-1", "owner-line-2"]),
+        "llm": FakeLlm(),
+        "voice": voice,
+    }
+    first = import_clip(clip, timing, **kwargs)
+    for path in first.recordings:
+        path.unlink()
+    second = import_clip(clip, timing, **kwargs)
+    assert second.skipped is False
+    assert all(path.is_file() for path in second.recordings)
+    assert [pcm_of(path.read_bytes()) for path in second.recordings] == [owner_a, owner_b]
+    profile = json.loads((data / "style_profile.json").read_text(encoding="utf-8"))
+    assert len(profile["few_shot_turns"]) == 2
+    assert len(voice.segments) == 1
+
+
+def test_reimport_to_another_recordings_dir_writes_wavs(tmp_path):
+    voice = FakeVoice()
+    clip, timing, owner_a, _other, owner_b = _mixed_clip(tmp_path)
+    data = tmp_path / "data"
+    first_dir = tmp_path / "recordings-a"
+    second_dir = tmp_path / "recordings-b"
+    shared = {
+        "data_dir": data,
+        "asr": FakeAsr(["owner-line-1", "owner-line-2"]),
+        "llm": FakeLlm(),
+        "voice": voice,
+    }
+    import_clip(clip, timing, recordings_dir=first_dir, **shared)
+    second = import_clip(clip, timing, recordings_dir=second_dir, **shared)
+    assert second.skipped is False
+    assert all(path.is_file() and path.is_relative_to(second_dir) for path in second.recordings)
+    assert [pcm_of(path.read_bytes()) for path in second.recordings] == [owner_a, owner_b]
+    profile = json.loads((data / "style_profile.json").read_text(encoding="utf-8"))
+    assert len(profile["few_shot_turns"]) == 2
+    assert len(voice.segments) == 1
+
+
 def test_other_participant_bytes_are_not_stored(tmp_path, monkeypatch):
     temp_dir = tmp_path / "tmp"
     temp_dir.mkdir()

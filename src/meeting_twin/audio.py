@@ -7,6 +7,12 @@ import wave
 from dataclasses import dataclass
 
 
+def canonical_seconds(value: float) -> str:
+    """Stable spelling so 0.0 and 0.00 are the same range."""
+
+    return format(value, ".10g")
+
+
 class TimingError(ValueError):
     """The timing file is not a list of owner speech ranges."""
 
@@ -31,14 +37,17 @@ class SpeechRange:
         return float(self.end)
 
     def as_dict(self) -> dict[str, str]:
-        return {"start": self.start, "end": self.end}
+        return {
+            "start": canonical_seconds(self.start_seconds),
+            "end": canonical_seconds(self.end_seconds),
+        }
 
 
 def parse_timing(text: str) -> list[SpeechRange]:
     """Parse `start end` lines in seconds. Blank lines and # comments are ignored."""
 
     ranges: list[SpeechRange] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[float, float]] = set()
     for line_number, line in enumerate(text.splitlines(), 1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -54,7 +63,7 @@ def parse_timing(text: str) -> list[SpeechRange]:
             raise TimingError(f"line {line_number}: expected start and end in seconds") from exc
         if start_seconds < 0 or end_seconds <= start_seconds:
             raise TimingError(f"line {line_number}: end must be greater than start")
-        key = (start, end)
+        key = (start_seconds, end_seconds)
         if key in seen:
             continue
         seen.add(key)
