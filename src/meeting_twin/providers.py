@@ -229,24 +229,3 @@ class ElevenLabsVoiceCloneClient:
         if not isinstance(voice_id, str) or voice_id == "":
             raise ProviderError("Voice-clone response did not include voice_id")
         return voice_id
-
-
-class TtsVoiceCloneClient:
-    """Generic voice-clone client. Reads TTS_API_KEY only.
-
-    The default meeting-twin voice path is ElevenLabsVoiceCloneClient. This
-    client exists so a TTS provider can be constructed from TTS_API_KEY without
-    borrowing another variable. It has no HTTP endpoint of its own.
-    """
-
-    env_var = "TTS_API_KEY"
-
-    def __init__(self, api_key: str | None = None):
-        self.api_key = resolve_key(api_key, self.env_var)
-
-    def register(self, segments: list[bytes]) -> str:
-        del segments
-        raise ProviderError(
-            "TtsVoiceCloneClient has no default HTTP provider; "
-            "use ElevenLabsVoiceCloneClient or pass a VoiceClone"
-        )

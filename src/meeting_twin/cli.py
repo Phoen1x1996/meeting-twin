@@ -43,6 +43,12 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_voice_client(opener=None):
+    """Voice clone used by import. Reads ELEVENLABS_API_KEY and uploads the audio."""
+
+    return ElevenLabsVoiceCloneClient(opener=opener)
+
+
 def _import(args, *, asr, llm, voice) -> int:
     if args.timing is None or not args.timing.is_file():
         raise IngestRefused("refusing to store clip: timing file is required")
@@ -55,7 +61,7 @@ def _import(args, *, asr, llm, voice) -> int:
 
     asr = asr if asr is not None else AsrClient()
     llm = llm if llm is not None else LlmClient()
-    voice = voice if voice is not None else ElevenLabsVoiceCloneClient()
+    voice = voice if voice is not None else build_voice_client()
     result = import_clip(
         args.clip,
         args.timing,
