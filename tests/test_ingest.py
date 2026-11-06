@@ -362,6 +362,27 @@ def test_provider_failure_writes_nothing(tmp_path):
     assert all(MARKER not in segment for segment in voice.segments[0])
 
 
+@pytest.mark.parametrize("timing_text", ["nan 1", "inf 2", "-1 2", "3 1"])
+def test_bad_ranges_are_refused(tmp_path, timing_text):
+    recordings = tmp_path / "recordings"
+    data = tmp_path / "data"
+    clip, _timing, *_rest = _mixed_clip(tmp_path)
+    timing = tmp_path / "bad.timing"
+    timing.write_text(timing_text + "\n", encoding="utf-8")
+    with pytest.raises(IngestRefused, match="refusing to store clip"):
+        import_clip(
+            clip,
+            timing,
+            recordings_dir=recordings,
+            data_dir=data,
+            asr=FakeAsr(["owner-line-1"]),
+            llm=FakeLlm(),
+            voice=FakeVoice(),
+        )
+    assert not recordings.exists()
+    assert not data.exists()
+
+
 def test_out_of_range_timing_writes_nothing(tmp_path):
     recordings = tmp_path / "recordings"
     data = tmp_path / "data"

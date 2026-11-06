@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import math
 import wave
 from dataclasses import dataclass
 
@@ -61,8 +62,10 @@ def parse_timing(text: str) -> list[SpeechRange]:
             end_seconds = float(end)
         except ValueError as exc:
             raise TimingError(f"line {line_number}: expected start and end in seconds") from exc
+        if not math.isfinite(start_seconds) or not math.isfinite(end_seconds):
+            raise TimingError(f"line {line_number}: ranges must be finite seconds")
         if start_seconds < 0 or end_seconds <= start_seconds:
-            raise TimingError(f"line {line_number}: end must be greater than start")
+            raise TimingError(f"line {line_number}: end must be greater than start and not negative")
         key = (start_seconds, end_seconds)
         if key in seen:
             continue
@@ -90,8 +93,11 @@ def slice_wav(wav_bytes: bytes, ranges: list[SpeechRange]) -> list[bytes]:
 
     slices: list[bytes] = []
     for speech_range in ranges:
-        start = int(round(speech_range.start_seconds * frame_rate))
-        end = int(round(speech_range.end_seconds * frame_rate))
+        try:
+            start = int(round(speech_range.start_seconds * frame_rate))
+            end = int(round(speech_range.end_seconds * frame_rate))
+        except (ValueError, OverflowError) as exc:
+            raise AudioError("timing range is outside the clip") from exc
         if start < 0 or end > frame_count or start >= end:
             raise AudioError("timing range is outside the clip")
         chunk = frames[start * frame_width : end * frame_width]

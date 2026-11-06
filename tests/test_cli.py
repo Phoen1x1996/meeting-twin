@@ -63,6 +63,42 @@ def test_cli_missing_key_names_variable(tmp_path, monkeypatch, capsys, present, 
     assert not data.exists()
 
 
+@pytest.mark.parametrize(
+    "timing_text",
+    ["nan 1.0", "inf 2.0", "-inf 1", "-1 1", "2 1", "1 nan", "0.0 inf"],
+)
+def test_cli_rejects_bad_ranges_without_traceback(tmp_path, monkeypatch, capsys, timing_text):
+    monkeypatch.chdir(tmp_path)
+    _clear(monkeypatch)
+    clip = tmp_path / "clip.wav"
+    write_wav(clip, pcm_sine(RATE, 440))
+    timing = tmp_path / "clip.timing"
+    timing.write_text(timing_text + "\n", encoding="utf-8")
+    recordings = tmp_path / "recordings"
+    data = tmp_path / "data"
+    code = main(
+        [
+            "import",
+            str(clip),
+            "--timing",
+            str(timing),
+            "--recordings-dir",
+            str(recordings),
+            "--data-dir",
+            str(data),
+        ],
+        asr=FakeAsr(["owner-line-1"]),
+        llm=FakeLlm(),
+        voice=FakeVoice(),
+    )
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "Traceback" not in captured.err
+    assert "refusing to store clip" in captured.err
+    assert not recordings.exists()
+    assert not data.exists()
+
+
 def test_cli_import_writes_owner_ranges(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     _clear(monkeypatch)

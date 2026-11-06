@@ -46,7 +46,10 @@ def _parser() -> argparse.ArgumentParser:
 def _import(args, *, asr, llm, voice) -> int:
     if args.timing is None or not args.timing.is_file():
         raise IngestRefused("refusing to store clip: timing file is required")
-    ranges = parse_timing(args.timing.read_text(encoding="utf-8"))
+    try:
+        ranges = parse_timing(args.timing.read_text(encoding="utf-8"))
+    except TimingError as exc:
+        raise IngestRefused(f"refusing to store clip: {exc}") from exc
     if not ranges:
         raise IngestRefused("refusing to store clip: timing file has no owner speech ranges")
 
