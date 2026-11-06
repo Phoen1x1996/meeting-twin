@@ -1,5 +1,7 @@
+import atexit
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -296,23 +298,66 @@ def test_reimport_to_another_recordings_dir_writes_wavs(tmp_path):
     assert len(voice.segments) == 1
 
 
+def _regular_files(root: Path) -> set[Path]:
+    found: set[Path] = set()
+    if not root.exists():
+        return found
+    for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
+        for name in filenames:
+            path = Path(dirpath) / name
+            try:
+                if path.is_file() and not path.is_symlink():
+                    found.add(path)
+            except OSError:
+                continue
+    return found
+
+
 def test_other_participant_bytes_are_not_stored(tmp_path, monkeypatch):
     temp_dir = tmp_path / "tmp"
     temp_dir.mkdir()
+    work = tmp_path / "cwd"
+    work.mkdir()
+    monkeypatch.chdir(work)
     monkeypatch.setenv("TMPDIR", str(temp_dir))
     monkeypatch.setenv("TEMP", str(temp_dir))
     monkeypatch.setenv("TMP", str(temp_dir))
-    before_temp = {path for path in temp_dir.rglob("*") if path.is_file()}
-
     voice = FakeVoice()
     llm = FakeLlm()
-    _result, recordings, data, _owner_a, other, _owner_b, clip = _run(tmp_path, llm=llm, voice=voice)
+    clip, timing, _owner_a, other, _owner_b = _mixed_clip(tmp_path)
+    recordings = tmp_path / "recordings"
+    data = tmp_path / "data"
+    before = {
+        "cwd": _regular_files(work),
+        "private_tmp": _regular_files(temp_dir),
+        "tmp": _regular_files(Path("/tmp")),
+    }
+    registered: list[tuple] = []
+
+    def spy_register(func, *args, **kwargs):
+        registered.append((func, args, kwargs))
+        return func
+
+    monkeypatch.setattr(atexit, "register", spy_register)
+
+    import_clip(
+        clip,
+        timing,
+        recordings_dir=recordings,
+        data_dir=data,
+        asr=FakeAsr(["owner-line-1", "owner-line-2"]),
+        llm=llm,
+        voice=voice,
+    )
+    for func, args, kwargs in registered:
+        func(*args, **kwargs)
 
     other_wav = wav_bytes(other)
+    clip_bytes = clip.read_bytes()
     banned_digests = {
         hashlib.sha256(other).hexdigest(),
         hashlib.sha256(other_wav).hexdigest(),
-        hashlib.sha256(clip.read_bytes()).hexdigest(),
+        hashlib.sha256(clip_bytes).hexdigest(),
     }
     stored_files = [
         path
@@ -326,19 +371,30 @@ def test_other_participant_bytes_are_not_stored(tmp_path, monkeypatch):
         digests.append(hashlib.sha256(payload).hexdigest())
         assert other not in payload
         assert MARKER not in payload
+        assert clip_bytes not in payload
         assert b"other-speaker-line" not in payload
     assert banned_digests.isdisjoint(digests)
 
-    new_temp = {path for path in temp_dir.rglob("*") if path.is_file()} - before_temp
-    for path in new_temp:
-        payload = path.read_bytes()
-        assert other not in payload
-        assert MARKER not in payload
+    after = {
+        "cwd": _regular_files(work),
+        "private_tmp": _regular_files(temp_dir),
+        "tmp": _regular_files(Path("/tmp")),
+    }
+    for label, paths in after.items():
+        for path in paths - before[label]:
+            try:
+                payload = path.read_bytes()
+            except OSError:
+                continue
+            assert other not in payload, label
+            assert MARKER not in payload, label
+            assert clip_bytes not in payload, label
 
     profile = json.loads((data / "style_profile.json").read_text(encoding="utf-8"))
     assert all(turn["text"].startswith("owner-line-") for turn in profile["few_shot_turns"])
     assert "other-speaker-line" not in llm.prompts[0]
     assert other not in b"".join(voice.segments[0])
+    assert clip_bytes not in b"".join(voice.segments[0])
 
 
 def test_provider_failure_writes_nothing(tmp_path):
