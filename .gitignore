@@ -1,0 +1,40 @@
+# Secrets. This repo is public. Never commit credentials.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Owner recordings, transcripts, style profiles, voice-clone artifacts.
+# Only the owner's own voice may be stored, and it stays off git.
+recordings/
+data/
+transcripts/
+style-profile/
+voice-clones/
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.webm
+*.aac
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
