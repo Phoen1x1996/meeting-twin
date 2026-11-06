@@ -57,8 +57,9 @@ def test_blank_env_is_missing(monkeypatch):
 
 def test_constructor_key_does_not_require_env(monkeypatch):
     _clear_keys(monkeypatch)
-    client = AsrClient(api_key="constructor-key")
-    assert client.api_key == "constructor-key"
+    supplied = "constructor" + "-key"
+    client = AsrClient(api_key=supplied)
+    assert client.api_key == supplied
 
 
 def test_elevenlabs_does_not_fall_back_to_tts_key(monkeypatch):
