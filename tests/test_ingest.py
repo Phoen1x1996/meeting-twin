@@ -397,7 +397,42 @@ def test_other_participant_bytes_are_not_stored(tmp_path, monkeypatch):
     assert clip_bytes not in b"".join(voice.segments[0])
 
 
-def test_provider_failure_writes_nothing(tmp_path):
+def test_register_runs_after_local_files_exist(tmp_path):
+    recordings = tmp_path / "recordings"
+    data = tmp_path / "data"
+    clip, timing, *_rest = _mixed_clip(tmp_path)
+
+    class OrderVoice:
+        def __init__(self):
+            self.segments: list[list[bytes]] = []
+
+        def register(self, segments: list[bytes]) -> str:
+            assert list(recordings.rglob("*.wav"))
+            assert (data / "style_profile.json").is_file()
+            assert list((data / "transcripts").glob("*.json"))
+            manifest = json.loads((data / "manifest.json").read_text(encoding="utf-8"))
+            assert manifest["clips"]
+            assert all(not entry.get("voice_clone_id") for entry in manifest["clips"].values())
+            self.segments.append([bytes(segment) for segment in segments])
+            return "clone-registered"
+
+    voice = OrderVoice()
+    import_clip(
+        clip,
+        timing,
+        recordings_dir=recordings,
+        data_dir=data,
+        asr=FakeAsr(["owner-line-1", "owner-line-2"]),
+        llm=FakeLlm(),
+        voice=voice,
+    )
+    assert len(voice.segments) == 1
+    assert all(MARKER not in segment for segment in voice.segments[0])
+    manifest = json.loads((data / "manifest.json").read_text(encoding="utf-8"))
+    assert list(manifest["clips"].values())[0]["voice_clone_id"] == "clone-registered"
+
+
+def test_failed_register_retries_without_a_duplicate_clone_or_turns(tmp_path):
     recordings = tmp_path / "recordings"
     data = tmp_path / "data"
     clip, timing, *_rest = _mixed_clip(tmp_path)
@@ -412,10 +447,30 @@ def test_provider_failure_writes_nothing(tmp_path):
             llm=FakeLlm(),
             voice=voice,
         )
-    assert not recordings.exists()
-    assert not data.exists()
-    assert len(voice.segments) == 1
+    assert list(recordings.rglob("*.wav"))
+    profile = json.loads((data / "style_profile.json").read_text(encoding="utf-8"))
+    assert len(profile["few_shot_turns"]) == 2
+    manifest = json.loads((data / "manifest.json").read_text(encoding="utf-8"))
+    assert all(not entry.get("voice_clone_id") for entry in manifest["clips"].values())
     assert all(MARKER not in segment for segment in voice.segments[0])
+
+    retry_asr = FakeAsr(["should-not-transcribe", "should-not-transcribe"])
+    retry_voice = FakeVoice()
+    result = import_clip(
+        clip,
+        timing,
+        recordings_dir=recordings,
+        data_dir=data,
+        asr=retry_asr,
+        llm=FakeLlm(),
+        voice=retry_voice,
+    )
+    assert result.voice_clone_id == "clone-registered"
+    assert len(retry_voice.segments) == 1
+    assert retry_asr.seen == []
+    profile = json.loads((data / "style_profile.json").read_text(encoding="utf-8"))
+    assert len(profile["few_shot_turns"]) == 2
+    assert [turn["text"] for turn in profile["few_shot_turns"]] == ["owner-line-1", "owner-line-2"]
 
 
 @pytest.mark.parametrize("timing_text", ["nan 1", "inf 2", "-1 2", "3 1"])

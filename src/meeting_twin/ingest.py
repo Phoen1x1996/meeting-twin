@@ -69,15 +69,20 @@ def import_clip(
     recording_paths = _recording_paths(recordings_dir, clip_id, ranges)
 
     if stored is not None and stored.get("ranges") == range_payload:
-        voice_clone_id = str(stored.get("voice_clone_id", ""))
-        if all(path.is_file() for path in recording_paths):
+        missing = not all(path.is_file() for path in recording_paths)
+        if missing:
+            _write_bytes(recording_paths, slices)
+        voice_clone_id = str(stored.get("voice_clone_id") or "")
+        if voice_clone_id:
             return ImportResult(
                 clip_id=clip_id,
                 recordings=recording_paths,
                 voice_clone_id=voice_clone_id,
-                skipped=True,
+                skipped=not missing,
             )
-        _write_bytes(recording_paths, slices)
+        voice_clone_id = voice.register(list(slices))
+        stored["voice_clone_id"] = voice_clone_id
+        _write_json(manifest_path, manifest)
         return ImportResult(
             clip_id=clip_id,
             recordings=recording_paths,
@@ -113,7 +118,6 @@ def import_clip(
             turns.append(turn)
             seen.add(key)
     description = llm.complete(style_prompt([turn["text"] for turn in turns])).strip()
-    voice_clone_id = voice.register(list(slices))
 
     _write_bytes(recording_paths, slices)
     _write_json(
@@ -127,8 +131,10 @@ def import_clip(
     clips[clip_id] = {
         "ranges": range_payload,
         "recordings": [path.name for path in recording_paths],
-        "voice_clone_id": voice_clone_id,
     }
+    _write_json(manifest_path, manifest)
+    voice_clone_id = voice.register(list(slices))
+    clips[clip_id]["voice_clone_id"] = voice_clone_id
     _write_json(manifest_path, manifest)
     return ImportResult(
         clip_id=clip_id,
