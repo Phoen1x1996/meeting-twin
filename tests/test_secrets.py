@@ -20,6 +20,39 @@ def test_scanner_flags_live_key_and_assignment(tmp_path):
     assert kinds == {"hardcoded_assignment", "live_key"}
 
 
+def test_scanner_flags_planted_secret_forms(tmp_path):
+    """Each form is written only under tmp_path so the repo scan stays clean."""
+
+    asr = "ASR_" + "API_KEY"
+    llm = "LLM_" + "API_KEY"
+    eleven = "ELEVENLABS_" + "API_KEY"
+    samples = {
+        "assign.env": f"{asr}=super-secret-value\n",
+        "export.env": f"export {llm}=exported-secret\n",
+        "hex.env": f"{eleven}=" + ("ab" * 16) + "\n",
+        "proj.py": "token = '" + "sk-" + "proj-" + ("a" * 24) + "'\n",
+        "ant.py": "token = '" + "sk-" + "ant-" + ("b" * 24) + "'\n",
+        "setitem.py": f'os.environ["{asr}"] = "assigned-secret"\n',
+        "getdefault.py": f'os.environ.get("{asr}", "fallback-secret")\n',
+        "annotation.py": "api_" + 'key: str | None = "fallback-secret"\n',
+    }
+    for name, text in samples.items():
+        path = tmp_path / name
+        path.write_text(text, encoding="utf-8")
+        assert scan_text(str(path), text), name
+
+    empty = "\n".join(
+        [
+            "# names only",
+            f"{asr}=",
+            f"{llm}=",
+            "TTS_" + "API_KEY=",
+            f"{eleven}=",
+        ]
+    )
+    assert scan_text(".env.example", empty) == []
+
+
 def test_scanner_allows_empty_env_and_name_mentions():
     text = "\n".join(
         [
